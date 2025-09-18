@@ -3,6 +3,10 @@ from crewai.project import CrewBase, agent, crew, task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from typing import List
 from crewai_tools import SerperDevTool
+from .tools.push_tool import PushNotificationTool
+from crewai.memory import LongTermMemory, ShortTermMemory, EntityMemory
+from crewai.memory.storage.rag_storage import RAGStorage
+from crewai.memory.storage. ltm_sqlite_storage import LTMSQLiteStorage
 
 # have structured output for the agent, here below are the schemas for the agents to use
 from pydantic import BaseModel, Field
@@ -32,23 +36,24 @@ class TrendingCompanyResearchList(BaseModel):
 class StockPicker():
     """StockPicker crew"""
 
-    agent_config = "config/agent_config.yaml"
-    crew_config = "config/crew_config.yaml"
+    agents_config = "config/agents.yaml"
+    tasks_config = "config/tasks.yaml"
 
     @agent
     def trending_company_finder(self) -> Agent:
         """Agent that reads news articles and identifies trending companies"""
         return Agent(
-            config=self.agent_config['trending_company_finder'],
+            config=self.agents_config['trending_company_finder'],
             tools=[SerperDevTool()],
             verbose=True,
+            memory=True
         )
     
     @agent
     def financial_researcher(self) -> Agent:
         """Agent that researches trending companies"""
         return Agent(
-            config=self.agent_config['financial_researcher'],
+            config=self.agents_config['financial_researcher'],
             tools=[SerperDevTool()],
             verbose=True,
         )
@@ -57,28 +62,29 @@ class StockPicker():
     def stock_picker(self) -> Agent:
         """Agent that picks stocks based on the trending companies"""
         return Agent(
-            config=self.agent_config['stock_picker'],
+            config=self.agents_config['stock_picker'],
             verbose=True,
+            memory=True,
         )
     
     @task
     def find_trending_companies(self) -> Task:
         return Task(
-            config=self.task_config['find_trending_companies'],
+            config=self.tasks_config['find_trending_companies'],
             output_pydantic=TrendingCompanyList,
         )
 
     @task
     def research_trending_companies(self) -> Task:
         return Task(
-            config=self.task_config['research_trending_companies'],
+            config=self.tasks_config['research_trending_companies'],
             output_pydantic=TrendingCompanyResearchList,
         )
     
     @task
     def pick_best_company(self) -> Task:
         return Task(
-            config=self.task_config['pick_best_company'],
+            config=self.tasks_config['pick_best_company'],
         )
     
     @crew
@@ -86,14 +92,48 @@ class StockPicker():
         """Crew that picks the best company for investment"""
 
         manager = Agent(
-            config=self.agent_config['manager'],
+            config=self.agents_config['manager'],
             allow_delegation=True,
+        )
+
+        short_term_memory = ShortTermMemory(
+            storage=RAGStorage(
+                embedder_config={
+                    "provider": "openai",
+                    "config": {
+                        "model": "text-embedding-3-small",
+                    }
+                },
+                type="short_term",
+                path="./memory/"
+            )
+        )
+        long_term_memory = LongTermMemory(
+            storage=LTMSQLiteStorage(
+                db_path="./memory/long_term_memory_storage.db"              
+            )
+        )
+        entity_memory = EntityMemory(
+            storage=RAGStorage(
+                embedder_config={
+                    "provider": "openai",
+                    "config": {
+                        "model": "text-embedding-3-small",
+                    }
+                },
+                type="short_term",
+                path="./memory/"
+            )
         )
 
         return Crew(
             agents=self.agents,
             tasks=self.tasks,
-            manager=manager,
+            manager_agent=manager,
             verbose=True,
-            process=Process.hierarchical
+            process=Process.hierarchical,
+            memory=True,
+            long_term_memory=long_term_memory,
+            short_term_memory=short_term_memory,
+            entity_memory=entity_memory,
         )

@@ -13,7 +13,7 @@ def run():
     inputs = {
         "sector": "AI"
     }
-    result = StockPicker().crew().kickoff(inputs)
+    result = StockPicker().stock_picker_crew().kickoff(inputs)
 
     print("\n\n=== FINAL RESULT ===\n\n")
     print(result.raw)
